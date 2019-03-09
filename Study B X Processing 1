@@ -1,0 +1,2163 @@
+{
+ "cells": [
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "# Predicting Financial Crisis: Study B x Processing 1"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "Using the Financial Crises dataset: characterize/describe the dataset and compare various classification models (e.g., Logistic regression, SVM, NN, classification trees/forests, ... ) in terms of their ability to correctly predict financial crises. Make sure to treat this as a real-time prediction problem: when predicting financial crises is a given year t, you can only use features from previous years t-s (with s>0), but no contemporaneous variables from the same year t. Compare the quality of your predictions using different criteria and validation methods."
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 21,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "import numpy as np\n",
+    "import pandas as pd\n",
+    "import matplotlib.pyplot as plt\n",
+    "from matplotlib import style\n",
+    "import seaborn as sns\n",
+    "sns.set_style('whitegrid')\n",
+    "from sklearn.model_selection import train_test_split, cross_val_predict, TimeSeriesSplit\n",
+    "from sklearn.ensemble import RandomForestClassifier, ExtraTreesClassifier, BaggingClassifier, AdaBoostClassifier, GradientBoostingClassifier\n",
+    "from sklearn.neighbors import KNeighborsClassifier\n",
+    "from sklearn.tree import DecisionTreeClassifier\n",
+    "from sklearn.discriminant_analysis import LinearDiscriminantAnalysis, QuadraticDiscriminantAnalysis\n",
+    "from sklearn.naive_bayes import GaussianNB\n",
+    "from xgboost import XGBClassifier\n",
+    "from sklearn.linear_model import SGDClassifier\n",
+    "from sklearn import svm\n",
+    "from sklearn.preprocessing import LabelEncoder, MinMaxScaler, StandardScaler\n",
+    "from sklearn import preprocessing\n",
+    "from sklearn.metrics import precision_score, recall_score, f1_score, r2_score, mean_squared_error, confusion_matrix\n",
+    "from sklearn.metrics import precision_recall_curve, roc_curve, roc_auc_score, average_precision_score\n",
+    "from math import sqrt\n",
+    "from sklearn.linear_model import LogisticRegression\n",
+    "from sklearn.utils import resample\n",
+    "from imblearn.over_sampling import SMOTE\n",
+    "import warnings\n",
+    "warnings.filterwarnings('ignore')\n",
+    "%matplotlib inline"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 22,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "df = pd.read_csv('FinancialCrises.csv')\n",
+    "del df['govass']"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 23,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "wars = np.concatenate((np.arange(1914,1920,1) , np.arange(1920,1926,1), np.arange(1939,1948,1)), axis=0)"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "## Data Processing"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 24,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "df1 = df.loc[df['country'] == 'DNK']\n",
+    "df2 = df.loc[df['country'] == 'AUS']\n",
+    "df3 = df.loc[df['country'] == 'JPN']\n",
+    "df4 = df.loc[df['country'] == 'ESP']\n",
+    "df5 = df.loc[df['country'] == 'GBR']\n",
+    "df6 = df.loc[df['country'] == 'SWE']\n",
+    "df7 = df.loc[df['country'] == 'FRA']\n",
+    "df8 = df.loc[df['country'] == 'NOR']\n",
+    "df9 = df.loc[df['country'] == 'USA']\n",
+    "df10 = df.loc[df['country'] == 'ITA']\n",
+    "df11 = df.loc[df['country'] == 'DEU']\n",
+    "df12 = df.loc[df['country'] == 'CAN']\n",
+    "df13 = df.loc[df['country'] == 'NLD']\n",
+    "df14 = df.loc[df['country'] == 'CHE']"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 25,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "def df_process(df):\n",
+    "    df = df.dropna()\n",
+    "    df = df.sort_values(by=['country', 'year'])\n",
+    "    df['credit_growth'] = np.log(df['loans1']).diff() - np.log(df['cpi']).diff()\n",
+    "    return df"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 26,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "df1 = df_process(df1)\n",
+    "df2 = df_process(df2)\n",
+    "df3 = df_process(df3)\n",
+    "df4 = df_process(df4)\n",
+    "df5 = df_process(df5)\n",
+    "df6 = df_process(df6)\n",
+    "df7 = df_process(df7)\n",
+    "df8 = df_process(df8)\n",
+    "df9 = df_process(df9)\n",
+    "df10 = df_process(df10)\n",
+    "df11 = df_process(df11)\n",
+    "df12 = df_process(df12)\n",
+    "df13 = df_process(df13)\n",
+    "df14 = df_process(df14)"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 27,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "df = pd.concat([df1, df2, df3, df4, df5, df6, df7, df8, df9, df10, df11, df12, df13, df14])\n",
+    "enc = LabelEncoder()\n",
+    "df['country'] = enc.fit_transform(df['country'])"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 28,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "scaled_features = ['rgdpbarro', 'rgdp', 'loans1', 'bassets2', 'narrowm',\n",
+    "       'money', 'gdp', 'iy', 'cpi', 'pop', 'stir', 'ltrate', 'stocks', 'credit_growth']\n",
+    "not_scaled_features = ['year', 'country', 'crisisST']\n",
+    "scale = StandardScaler()\n",
+    "df1 = pd.DataFrame(scale.fit_transform(df[scaled_features]), columns = scaled_features, index = df.index)\n",
+    "df2 = df[not_scaled_features]\n",
+    "df = df1.merge(df2, left_index = True, right_index = True)\n",
+    "df = df.sort_values(by=['year', 'country'])"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 29,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "for i in range(len(wars)):\n",
+    "    df = df.loc[df['year'] != wars[i]]"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 30,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "df = df.dropna()\n",
+    "df = df.sort_values(by=['year', 'country'])"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "## Models"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 32,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "n = 3\n",
+    "df = df.set_index(np.arange(len(df)))"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 14,
+   "metadata": {},
+   "outputs": [
+    {
+     "data": {
+      "text/html": [
+       "<div>\n",
+       "<style scoped>\n",
+       "    .dataframe tbody tr th:only-of-type {\n",
+       "        vertical-align: middle;\n",
+       "    }\n",
+       "\n",
+       "    .dataframe tbody tr th {\n",
+       "        vertical-align: top;\n",
+       "    }\n",
+       "\n",
+       "    .dataframe thead th {\n",
+       "        text-align: right;\n",
+       "    }\n",
+       "</style>\n",
+       "<table border=\"1\" class=\"dataframe\">\n",
+       "  <thead>\n",
+       "    <tr style=\"text-align: right;\">\n",
+       "      <th></th>\n",
+       "      <th>rgdpbarro</th>\n",
+       "      <th>rgdp</th>\n",
+       "      <th>loans1</th>\n",
+       "      <th>bassets2</th>\n",
+       "      <th>narrowm</th>\n",
+       "      <th>money</th>\n",
+       "      <th>gdp</th>\n",
+       "      <th>iy</th>\n",
+       "      <th>cpi</th>\n",
+       "      <th>pop</th>\n",
+       "      <th>stir</th>\n",
+       "      <th>ltrate</th>\n",
+       "      <th>stocks</th>\n",
+       "      <th>credit_growth</th>\n",
+       "      <th>year</th>\n",
+       "      <th>country</th>\n",
+       "      <th>crisisST</th>\n",
+       "    </tr>\n",
+       "  </thead>\n",
+       "  <tbody>\n",
+       "    <tr>\n",
+       "      <th>0</th>\n",
+       "      <td>-1.379891</td>\n",
+       "      <td>-1.318650</td>\n",
+       "      <td>-0.137390</td>\n",
+       "      <td>-0.146371</td>\n",
+       "      <td>-0.130077</td>\n",
+       "      <td>-0.152272</td>\n",
+       "      <td>-0.155687</td>\n",
+       "      <td>-1.059112</td>\n",
+       "      <td>-0.941230</td>\n",
+       "      <td>-0.741855</td>\n",
+       "      <td>-0.425937</td>\n",
+       "      <td>-0.425524</td>\n",
+       "      <td>-0.316144</td>\n",
+       "      <td>0.136475</td>\n",
+       "      <td>1872</td>\n",
+       "      <td>12</td>\n",
+       "      <td>0</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>1</th>\n",
+       "      <td>-1.374411</td>\n",
+       "      <td>-1.299619</td>\n",
+       "      <td>-0.137385</td>\n",
+       "      <td>-0.146366</td>\n",
+       "      <td>-0.130074</td>\n",
+       "      <td>-0.152268</td>\n",
+       "      <td>-0.155677</td>\n",
+       "      <td>-0.366026</td>\n",
+       "      <td>-0.936778</td>\n",
+       "      <td>-0.741000</td>\n",
+       "      <td>-0.278059</td>\n",
+       "      <td>-0.368177</td>\n",
+       "      <td>-0.316148</td>\n",
+       "      <td>0.133968</td>\n",
+       "      <td>1873</td>\n",
+       "      <td>12</td>\n",
+       "      <td>0</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>2</th>\n",
+       "      <td>-1.378900</td>\n",
+       "      <td>-1.292471</td>\n",
+       "      <td>-0.137379</td>\n",
+       "      <td>-0.146362</td>\n",
+       "      <td>-0.130077</td>\n",
+       "      <td>-0.152264</td>\n",
+       "      <td>-0.155671</td>\n",
+       "      <td>-0.348864</td>\n",
+       "      <td>-0.934870</td>\n",
+       "      <td>-0.740163</td>\n",
+       "      <td>-0.107655</td>\n",
+       "      <td>-0.439177</td>\n",
+       "      <td>-0.316154</td>\n",
+       "      <td>0.142923</td>\n",
+       "      <td>1874</td>\n",
+       "      <td>12</td>\n",
+       "      <td>0</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>3</th>\n",
+       "      <td>-1.376055</td>\n",
+       "      <td>-1.306435</td>\n",
+       "      <td>-0.137377</td>\n",
+       "      <td>-0.146361</td>\n",
+       "      <td>-0.130081</td>\n",
+       "      <td>-0.152263</td>\n",
+       "      <td>-0.155673</td>\n",
+       "      <td>-0.323030</td>\n",
+       "      <td>-0.935506</td>\n",
+       "      <td>-0.739399</td>\n",
+       "      <td>0.003570</td>\n",
+       "      <td>-0.478645</td>\n",
+       "      <td>-0.316159</td>\n",
+       "      <td>0.060841</td>\n",
+       "      <td>1875</td>\n",
+       "      <td>12</td>\n",
+       "      <td>0</td>\n",
+       "    </tr>\n",
+       "    <tr>\n",
+       "      <th>4</th>\n",
+       "      <td>-1.025687</td>\n",
+       "      <td>-1.010352</td>\n",
+       "      <td>-0.137401</td>\n",
+       "      <td>-0.146385</td>\n",
+       "      <td>-0.130098</td>\n",
+       "      <td>-0.152292</td>\n",
+       "      <td>-0.155746</td>\n",
+       "      <td>-0.371068</td>\n",
+       "      <td>-0.939804</td>\n",
+       "      <td>-0.783662</td>\n",
+       "      <td>-0.254134</td>\n",
+       "      <td>-0.508201</td>\n",
+       "      <td>-0.314684</td>\n",
+       "      <td>0.034642</td>\n",
+       "      <td>1876</td>\n",
+       "      <td>0</td>\n",
+       "      <td>0</td>\n",
+       "    </tr>\n",
+       "  </tbody>\n",
+       "</table>\n",
+       "</div>"
+      ],
+      "text/plain": [
+       "   rgdpbarro      rgdp    loans1  bassets2   narrowm     money       gdp  \\\n",
+       "0  -1.379891 -1.318650 -0.137390 -0.146371 -0.130077 -0.152272 -0.155687   \n",
+       "1  -1.374411 -1.299619 -0.137385 -0.146366 -0.130074 -0.152268 -0.155677   \n",
+       "2  -1.378900 -1.292471 -0.137379 -0.146362 -0.130077 -0.152264 -0.155671   \n",
+       "3  -1.376055 -1.306435 -0.137377 -0.146361 -0.130081 -0.152263 -0.155673   \n",
+       "4  -1.025687 -1.010352 -0.137401 -0.146385 -0.130098 -0.152292 -0.155746   \n",
+       "\n",
+       "         iy       cpi       pop      stir    ltrate    stocks  credit_growth  \\\n",
+       "0 -1.059112 -0.941230 -0.741855 -0.425937 -0.425524 -0.316144       0.136475   \n",
+       "1 -0.366026 -0.936778 -0.741000 -0.278059 -0.368177 -0.316148       0.133968   \n",
+       "2 -0.348864 -0.934870 -0.740163 -0.107655 -0.439177 -0.316154       0.142923   \n",
+       "3 -0.323030 -0.935506 -0.739399  0.003570 -0.478645 -0.316159       0.060841   \n",
+       "4 -0.371068 -0.939804 -0.783662 -0.254134 -0.508201 -0.314684       0.034642   \n",
+       "\n",
+       "   year  country  crisisST  \n",
+       "0  1872       12         0  \n",
+       "1  1873       12         0  \n",
+       "2  1874       12         0  \n",
+       "3  1875       12         0  \n",
+       "4  1876        0         0  "
+      ]
+     },
+     "execution_count": 14,
+     "metadata": {},
+     "output_type": "execute_result"
+    }
+   ],
+   "source": [
+    "df.head()"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "### Logistic Regression"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 33,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "clf = LogisticRegression(max_iter = 200, solver = 'newton-cg')"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 34,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "AUC_LR_sm = []\n",
+    "AUC_LR = []\n",
+    "proba_sm = []\n",
+    "proba = []\n",
+    "y_t = []\n",
+    "y = df['crisisST'].values\n",
+    "X = df.drop(['crisisST'], axis=1).values\n",
+    "scaler = StandardScaler()\n",
+    "X  = scaler.fit_transform(X)\n",
+    "sm = SMOTE(0.5,random_state=42)\n",
+    "tscv = TimeSeriesSplit(n_splits=n)\n",
+    "for train_index, test_index in tscv.split(X):\n",
+    "    X_train, X_test = X[train_index], X[test_index]\n",
+    "    y_train, y_test = y[train_index], y[test_index]\n",
+    "    y_t.append(y_test)\n",
+    "    X_train_sm, y_train_sm = sm.fit_resample(X_train, y_train)\n",
+    "    clf.fit(X_train_sm, y_train_sm)\n",
+    "    y_proba1 = clf.predict_proba(X_test)\n",
+    "    clf.fit(X_train, y_train)\n",
+    "    y_proba = clf.predict_proba(X_test)\n",
+    "    AUC_LR.append(roc_auc_score(y_test, y_proba[:,1]))\n",
+    "    proba.append(list(y_proba[:,1]))\n",
+    "    AUC_LR_sm.append(roc_auc_score(y_test, y_proba1[:,1]))\n",
+    "    proba_sm.append(list(y_proba1[:,1]))"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 35,
+   "metadata": {},
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "--------------------------------------------------------------------------------\n",
+      "AUC Score: 0.7745901639344261\n",
+      "Confusion_Matrix 1\n",
+      "[[243   1]\n",
+      " [  7   0]]\n",
+      "--------------------------------------------------------------------------------\n",
+      "AUC Score: 0.6172839506172838\n",
+      "Confusion_Matrix 2\n",
+      "[[240   3]\n",
+      " [  7   1]]\n",
+      "--------------------------------------------------------------------------------\n",
+      "AUC Score: 0.4989539748953975\n",
+      "Confusion_Matrix 3\n",
+      "[[239   0]\n",
+      " [ 12   0]]\n",
+      "--------------------------------------------------------------------------------\n",
+      "AUC Score: 0.8507025761124121\n",
+      "Confusion_Matrix 1\n",
+      "[[233  11]\n",
+      " [  4   3]]\n",
+      "--------------------------------------------------------------------------------\n",
+      "AUC Score: 0.5324074074074074\n",
+      "Confusion_Matrix 2\n",
+      "[[231  12]\n",
+      " [  7   1]]\n",
+      "--------------------------------------------------------------------------------\n",
+      "AUC Score: 0.5244072524407253\n",
+      "Confusion_Matrix 3\n",
+      "[[233   6]\n",
+      " [ 10   2]]\n"
+     ]
+    },
+    {
+     "data": {
+      "text/plain": [
+       "(None, None)"
+      ]
+     },
+     "execution_count": 35,
+     "metadata": {},
+     "output_type": "execute_result"
+    }
+   ],
+   "source": [
+    "def conf_mat(prob, AUC):\n",
+    "    for i in range(n):\n",
+    "        y_pred = []\n",
+    "        for j in range(len(prob[i])):\n",
+    "            if prob[i][j]>0.5:\n",
+    "                y_pred.append(1)\n",
+    "            else: \n",
+    "                y_pred.append(0)\n",
+    "        print( \"-\"*80)\n",
+    "        print('AUC Score:', AUC[i])\n",
+    "        print('Confusion_Matrix', i+1)\n",
+    "        print(confusion_matrix(y_t[i],y_pred))\n",
+    "conf_mat(proba, AUC_LR), conf_mat(proba_sm, AUC_LR_sm)"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "### Plots"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 36,
+   "metadata": {},
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "Average precision-recall score: 0.19\n"
+     ]
+    },
+    {
+     "data": {
+      "image/png": "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Jrlx2vLNSXbaVHurV6/O5OTkLFU3e1atWjUv62IY9C9Gad3+9ZHzr8q/X/ez7LXL1mOsiiFZs2ZNbr311nGXwUDpX8ymm2++OT/84Q9zww03ZGJiIlfvsXRQn8FGNcK3ITclWTZteVmSTf56ZptttsnyeRizJycn52VdDIP+xSit27+2O+eG7LPddvmnFx44xqoYEj/DGCX9i9lw88035+CDD863vvWt7LrrrjnuuOPyohe9KNdff/287F8rVqzYrOPmOvBNJtm7tbZLkluSPDLJ2+a4BgAAYAG69tprc9555+VJT3pSli1blv322y/HHXdcnvGMZ2TbbbdNklx//fVjrnJ2zUnga60dlWSHqnpfa+34JGenu2HMB6rKRSMAAMDIXHLJJTn55JPzoQ99KHfccUeuvvrq7LLLLnnf+9437tJGbmSBr6pWJjmg//60aevPTHLmqM4LAACQdNN/X/3qV+ess87KNttsk2c961l5xStekV122WXcpc2ZuZ7SCQAAMDKrVq3Ktddem/vc5z7Zdtttc9FFF+UNb3hDjj322NzjHvcYd3lzTuADAAC2eD/+8Y9zyimn5D3veU/222+/fOYzn8kee+yR//iP/8jixYvHXd7YCHwAAMAW6+KLL87b3/72fPjDH87q1atzyCGH5Pjjj//F9oUc9hKBDwAA2MJMTU1lamoqixYtyhlnnJHTTjstRx99dF7+8pfn/ve//7jLm1cWjbsAAACAmbjtttvy/ve/P/vss08+9rGPJUle+tKX5oorrsgpp5wi7K2HET4AAGBe++EPf5h3v/vdee9735trrrkm++67b3baaackyY477jjm6uY3gQ8AAJjXnvCEJ+Tb3/52DjvssLzyla/MwQcfnImJiXGXtUUQ+AAAgHljzZo1Oeuss3Lqqafmwx/+cHbYYYf89V//de55z3tm7733Hnd5WxzX8AEAAGP305/+NKecckqWL1+eww47LBdccEEuvfTSJMlBBx0k7G0mI3wAAMBYXX311XngAx+Y66+/Pvvtt19OO+20POUpT8lWW2017tK2eAIfAAAw5y688MJcdNFFed7znpd73/veedGLXpQnPvGJefjDH+76vFkk8AEAAHPijjvuyJlnnpl3vOMdOeecc3L3u989Rx11VJYuXZo/+7M/G3d5g+QaPgAAYOS+8pWvpLWWI444IitXrszb3va2fO9738vSpUvHXdqgGeEDAABG4oorrsiqVauy9957Z7fddss973nPvOUtb8kRRxyRJUtEkblghA8AAJhV3/zmN3PkkUdmzz33zIknnpgk2XvvvXPeeeflqU99qrA3hwQ+AABgVnz2s5/NQQcdlP333z9nnXVWXvGKV+Tkk08ed1kLmmgNAABstptuuinbb799Fi9enG984xu56qqrcvLJJ+d5z3teli1bNu7yFjwjfAAAwJ22cuXKHH/88dl9993zyU9+Mkly4okn5nvf+15e/vKXC3vzhBE+AABgxr72ta/l7W9/e04//fQsWrQoT33qU/Mbv/EbSZLttttuzNWxLoEPAACYkTVr1uRZz3pWrr322pxwwgl5yUtekt13333cZbERAh8AALBeN9xwQ0499dR85CMfybnnnpttt902p59+evbaa6/ssMMO4y6PGXANHwAA8N98//vfz8te9rLsvvvuOeGEE7LjjjvmRz/6UZLkQQ96kLC3BTHCBwAA/MLk5GQe+MAHZsmSJXn605+eV77yldl3333HXRabSeADAIAF7Oc//3k+9rGP5eqrr86rXvWq3P/+98873/nO/N7v/V522223cZfHXWRKJwAALEDXXXdd/vzP/zx77rlnnvGMZ+S0007LmjVrMjExkZe+9KXC3kAIfAAA/D/27js6qzJv3/6RBExAioANIXTcEGkKKiDiKIoUFRAFKyrKgDoCwfHxUWcGCw4WTACBiIooYsFKsWHDYcQKiIqQLSBdcFSKQEiA5H7/kPHlN8+oEXOzU47PWi5zZyc7p6zLkDPfa++tMuapp54iNTWVm266iaZNm/Lyyy/z8ccfk5hoPSht3NIpSZIklXKxWIx33nmHww47jGbNmtGyZUv69OlDeno6LVq0iDqe4sgKL0mSJJVSu3btYsqUKRx33HGcdtppZGRkAJCWlsbkyZMte2WAhU+SJEkqhe6//37q1avHZZddxq5du3j44YeZMGFC1LF0gLmlU5IkSSolwjCkcePGJCYmsmHDBlq0aMGjjz7KGWecQUJCQtTxFAEnfJIkSVIJFovFeOONN+jWrRtNmjThlVdeAWDEiBG89tprdO7c2bJXhln4JEmSpBJo9+7dTJ48mZYtW9K5c2cWLlzI7bffzoknngjgHTcFuKVTkiRJKlF27drFQQcdREJCArfddhtV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\n",
+      "text/plain": [
+       "<Figure size 1080x1080 with 2 Axes>"
+      ]
+     },
+     "metadata": {},
+     "output_type": "display_data"
+    }
+   ],
+   "source": [
+    "y_score = proba_sm[0]\n",
+    "y_test = y_t[0]\n",
+    "precision, recall, thresholds = precision_recall_curve(y_test, y_score)\n",
+    "from sklearn.metrics import average_precision_score\n",
+    "average_precision = average_precision_score(y_test, y_score)\n",
+    "\n",
+    "print('Average precision-recall score: {0:0.2f}'.format(\n",
+    "      average_precision))\n",
+    "from sklearn.utils.fixes import signature\n",
+    "step_kwargs = ({'step': 'post'}\n",
+    "               if 'step' in signature(plt.fill_between).parameters\n",
+    "               else {})\n",
+    "plt.figure(figsize=(15,15))\n",
+    "plt.subplot(2, 1, 1)\n",
+    "plt.step(recall, precision, color='b', alpha=0.2,\n",
+    "         where='post')\n",
+    "plt.fill_between(recall, precision, alpha=0.2, color='b', **step_kwargs)\n",
+    "\n",
+    "plt.xlabel('Recall')\n",
+    "plt.ylabel('Precision')\n",
+    "plt.ylim([0.0, 1.05])\n",
+    "plt.xlim([0.0, 1.0])\n",
+    "plt.title('2-class Precision-Recall curve: AP={0:0.2f}'.format(\n",
+    "          average_precision))\n",
+    "plt.subplot(2,1,2)\n",
+    "fpr, tpr, _ = roc_curve(y_test, y_score)\n",
+    "auc_score = roc_auc_score(y_test, y_score)\n",
+    "\n",
+    "plt.plot([0, 1], [0, 1], 'k--')\n",
+    "plt.plot(fpr, tpr)\n",
+    "plt.xlabel('False positive rate')\n",
+    "plt.ylabel('True positive rate')\n",
+    "plt.title('ROC curve: AUC Score = {0:0.2f}'.format(\n",
+    "          auc_score))\n",
+    "plt.show()"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "### Random Forest Classifier"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 19,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "clf = RandomForestClassifier(criterion = 'entropy', max_features = 'auto', min_samples_leaf = 2, min_samples_split = 2,\n",
+    "                            n_estimators = 500)"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 20,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "AUC_LR_sm = []\n",
+    "AUC_LR = []\n",
+    "proba_sm = []\n",
+    "proba = []\n",
+    "y_t = []\n",
+    "y = df['crisisST'].values\n",
+    "X = df.drop(['crisisST'], axis=1).values\n",
+    "scaler = StandardScaler()\n",
+    "X  = scaler.fit_transform(X)\n",
+    "sm = SMOTE(0.5,random_state=42)\n",
+    "tscv = TimeSeriesSplit(n_splits=n)\n",
+    "for train_index, test_index in tscv.split(X):\n",
+    "    X_train, X_test = X[train_index], X[test_index]\n",
+    "    y_train, y_test = y[train_index], y[test_index]\n",
+    "    y_t.append(y_test)\n",
+    "    X_train_sm, y_train_sm = sm.fit_resample(X_train, y_train)\n",
+    "    clf.fit(X_train_sm, y_train_sm)\n",
+    "    y_proba1 = clf.predict_proba(X_test)\n",
+    "    clf.fit(X_train, y_train)\n",
+    "    y_proba = clf.predict_proba(X_test)\n",
+    "    AUC_LR.append(roc_auc_score(y_test, y_proba[:,1]))\n",
+    "    proba.append(list(y_proba[:,1]))\n",
+    "    AUC_LR_sm.append(roc_auc_score(y_test, y_proba1[:,1]))\n",
+    "    proba_sm.append(list(y_proba1[:,1]))"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 21,
+   "metadata": {},
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "--------------------------------------------------------------------------------\n",
+      "AUC Score: 0.540983606557377\n",
+      "Confusion_Matrix 1\n",
+      "[[244   0]\n",
+      " [  7   0]]\n",
+      "--------------------------------------------------------------------------------\n",
+      "AUC Score: 0.6779835390946503\n",
+      "Confusion_Matrix 2\n",
+      "[[243   0]\n",
+      " [  8   0]]\n",
+      "--------------------------------------------------------------------------------\n",
+      "AUC Score: 0.5111576011157601\n",
+      "Confusion_Matrix 3\n",
+      "[[239   0]\n",
+      " [ 12   0]]\n",
+      "--------------------------------------------------------------------------------\n",
+      "AUC Score: 0.5942622950819673\n",
+      "Confusion_Matrix 1\n",
+      "[[244   0]\n",
+      " [  7   0]]\n",
+      "--------------------------------------------------------------------------------\n",
+      "AUC Score: 0.5313786008230452\n",
+      "Confusion_Matrix 2\n",
+      "[[243   0]\n",
+      " [  8   0]]\n",
+      "--------------------------------------------------------------------------------\n",
+      "AUC Score: 0.5831589958158996\n",
+      "Confusion_Matrix 3\n",
+      "[[235   4]\n",
+      " [ 12   0]]\n"
+     ]
+    },
+    {
+     "data": {
+      "text/plain": [
+       "(None, None)"
+      ]
+     },
+     "execution_count": 21,
+     "metadata": {},
+     "output_type": "execute_result"
+    }
+   ],
+   "source": [
+    "def conf_mat(prob, AUC):\n",
+    "    for i in range(n):\n",
+    "        y_pred = []\n",
+    "        for j in range(len(prob[i])):\n",
+    "            if prob[i][j]>0.5:\n",
+    "                y_pred.append(1)\n",
+    "            else: \n",
+    "                y_pred.append(0)\n",
+    "        print( \"-\"*80)\n",
+    "        print('AUC Score:', AUC[i])\n",
+    "        print('Confusion_Matrix', i+1)\n",
+    "        print(confusion_matrix(y_t[i],y_pred))\n",
+    "conf_mat(proba, AUC_LR), conf_mat(proba_sm, AUC_LR_sm)"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "### Plots"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 17,
+   "metadata": {},
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "Average precision-recall score: 0.13\n"
+     ]
+    },
+    {
+     "data": {
+      "image/png": "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SdKW755l/ey4dc/YG46ir6+PU089lYsvvpju7m5e97rX8fa3v525c+dOUJXtb7KndEqSJEnSmJYs6+dx2278vXv9/f088MAD7LLLLsycOZNFixZx+umnc8IJJ/DYxz62CZW2NwOfJEmSpLZzz7J+/tdu4x+Ju++++zjnnHM4++yzWbBgAd///vfZbbfduPPOO5k6dfOnhW6pDHySJEmS2sqqR9aybPWacU3pvPnmm/nkJz/Jl7/8ZQYGBjj88MM55ZRT/rK+k8MeGPgkSZIktZkl9RM6d9pA4BscHGRwcJApU6Zw4YUX8tWvfpVjjjmGk08+mfnz509mqW2vWW8wlCRJkqRNMhT4ho/wrV69ms9//vPsueeefOMb3wDgrW99K3fddRfnnHOOYW8EjvBJkiRJaitD7+Dbeevq3XhLlizhs5/9LOeeey73338/++67L1tvvTUAc+bMaVmdWwIDnyRJkqS2smT5X4/wvfCFL+SGG27gyCOP5B3veAeHHHIIXV1drSxxi2HgkyRJktQ21q9fz9XXL2bq2gHWDqyG6Vvxmc98hh122IE99tij1eVtcbyHT5IkSVLLPfzww5xzzjn09vZy6eXXsHb5n7nlllsAOPjggw17m8gRPkmSJEktdc899/C0pz2NpUuXsmDBArbbawFPefwOPOMZz2h1aVs8R/gkSZIkTbprr72W888/H4CddtqJE088kcsvv5xrrrmGgSkz2Xnbx7S4wjI4widJkiRpUqxbt46LLrqIs846i1/84hdsv/32HH300fT09PChD30IgP4163jg4UfYac7YL13X2BzhkyRJktR0P//5z4kIXvrSl3L77bfziU98gt/97nf09Px1sLtv+QDw6HfwadP8f/buPF7HOvH/+OssnEOWUFQcuy5rlIwlaUoptJCkVFpNUuFoylQz054WnYOslZS0ahFRmkrTJDUj1VS4QhRZIku2c3DO/fuD6ec7Uzl07nOd5fV8PHq47/u67+t+08ftfp/P57ouZ/gkSZIkxcWKFSvIysqiQYMGHHXUUVSrVo2hQ4fSvXt3kpN/voqs3rwDgCP3XoNPv40zfJIkSZLy1T//+U8uvPBC6tSpw0033QRAgwYNmDNnDj179vzFsgf/ew0+/TYWPkmSJEn54vXXX6d9+/a0bt2amTNnMmjQIIYPH35A+1i92cKXn1zSKUmS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y0hPTyctLY0bbriB119/HYBKlSpx/fXXW/YkSVKJ5gyfpCJryJAhDBs2jMTERHr16kV6ejotW7aMOpYkSVKh4QyfpCJj165dPP/882zZsgWAFi1acNNNN7F8+XImT55s2ZMkSfovFj5Jhd7GjRt54IEHqFu3LhdccAHPP/88ABdeeCFDhw6levXqESeUJEkqnFzSKanQ2rVrF4MHD2bixIls27aNk08+mbFjx9KlS5eoo0mSJBUJzvBJKlRisRhfffUVAKVKlWLRokWcd955fPLJJ7zzzjuceeaZJCb60SVJkpQXzvBJKhR27tzJCy+8QGZmJl988QXffPMNRxxxBLNmzbLgSZIkHSS/RUmK1KZNmxg6dCh16tThkksuYceOHTz88MNUrFgRwLInSZL0GzjDJykSu3btolSpUmzYsIE///nPdOzYkQkTJtCpUydLniRJUj6x8EXg4282Mv7vS8mN5e9+v/p+C42OqJC/O5XyUSwWY/bs2WRkZJCUlMSrr75K3bp1Wb58OWlpaVHHkyRJKnYsfBF444vV/G3h2nwvZ0dVLMOpjavl6z6l/JCdnc2zzz5LZmYm//73vzn8hadxQAAAGOZJREFU8MO57rrriMViJCQkWPYkSZLixMIXkTKlkpg58MSoY0gFYsSIEQwZMoSmTZsyYcIEevfuTWpqatSxJEmSij0Ln6R8t2DBAoYPH06XLl3o1q0bV1xxBccddxwdO3YkISEh6niSJEklhoVPUr6IxWL87W9/IyMjg1mzZpGamkrDhg0BOOywwzj11FMjTihJklTyWPgk5Ytzzz2XqVOncsQRR3D33Xdz9dVXc9hhh0UdS5IkqUSz8Ek6KGvXruXRRx9l8ODBlC1blosvvpju3bvTq1cvUlJSoo4nSZIkLHySDtDnn39OZmYmTz/9NDt37uTYY4+la9eu9OjRI+pokiRJ+i8WPkl5snXrVrp3785bb71F2bJlueqqqxg4cCBHH3101NEkSZL0Cyx8kn7R9u3bmTdvHh06dKBcuXJUrFiR++67j759+1K5cuWo40mSJGk/LHyS/seqVasYPXo048aNY/v27axcuZIqVarw4osvRh1NkiRJByAx6gCSCo+vv/6aPn36ULt2bYYOHUqHDh148803nc2TJEkqopzhk0q43NxcNm3aROXKldm1axevvvoq11xzDQMGDKBevXpRx5MkSdJvYOGTSqht27bxxBNPMGLECJo1a8ZLL71EEASsXr2asmXLRh1PkiRJ+cAlnVIJs3LlSoYMGUKNGjW47rrrqFSpEhdccMFP2y17kiRJxYczfFIJEYvFSEhIYPz48QwbNoxzzz2X9PR02rZtS0JCQtTxJEmSFAfO8EnFWE5ODi+//DInnngi06ZNA2DgwIEsWbKEKVOm0K5dO8ueJElSMWbhk4qhLVu2MGLECBo0aECPHj1YuXIlu3fvBuCwww6jTp06ESeUJElSQXBJp1QMnXTSSXzyySe0a9eOBx98kHPOOYfkZP+6S5IklTR+A5SKgQ8//JBHH32U0aNHk5qayr333kulSpVo3bp11NEkSZIUIZd0SkXU7t27eeGFF2jbti1t27blpZde4vPPPwfgjDPOsOxJkiTJwicVRWvWrKFevXr06tWLdevWMXLkSFauXEmrVq2ijiZJkqRCxCWdUhHx9ddf88knn9CjRw+qVatG586dOeOMMzjrrLNISkqKOp4kSZIKobgUviAIEoExQHMgG7gqDMMl+2xPB/5zpeeZYRjeEY8cUlEXi8WYM2cOmZmZTJ06lQoVKtC1a1dSU1MZN25c1PEkSZJUyMVrSWc3IDUMw7bAn4CH/rMhCIK6wEVAO6At0CkIgmPilEMqsj777DNat27NiSeeyOzZsxkyZAhffPEFqampUUeTJElSERGvJZ3tgTcAwjD8MAiC4/fZtgI4IwzDHIAgCEoBWXHKIRUpGzduZOvWraSlpVG2bFk2b97MmDFj6NOnD4ccckjU8SRJklTExKvwVQA273M/JwiC5DAMd4dhuAtYHwRBAvAg8EkYhl/92s6ys7NZuHBhnKIevKysrIPK9cMPG8jNzS2UvydFY/ny5UyePJlXXnmFk08+mWHDhpGWlsYrr7xCQkIC3377bdQRVcwc7OeXlFeOMcWT40vxVNzGV7wK349A+X3uJ4ZhuPs/d4IgSAUeB7YA/fe3s5SUFBo1apTvIX+rhQsXHlSuKl8vIDFxa6H8PalgzZkzhwcffJBp06aRnJxM7969SU9Pp1GjRgc9vqS8cHwp3hxjiifHl+KpsI6vjz/++KBeF6/CNwc4C3ghCII2wOf/2bB3Zu9V4J0wDO+P0/tLhdbOnTtJTk4mMTGR6dOn8/7773PrrbfSv39/jjzyyKjjSZIkqRiJV+F7BTgtCIIPgATg8iAIBgNLgCTgJCAlCILOe59/cxiGc+OURSoUfvjhB8aPH8+oUaN47LHH6NKlCzfffDO33XYbZcqUiTqeJEmSiqG4FL4wDHOBfv/18KJ9bpeI0wxm7cphZ07u/zy+c/f/PqbiKwxDhg8fzpNPPsmOHTvo1KkTVapUAaBixYoRp5MkSVJx5oXX42Tpuq2cMfw9duXEfnZ7hVT/6EuC3NxcTj/9dNasWcPFF1/MoEGDaNq0adSxJEmSVELYOuLk+x+z2ZUT45I2tahVpez/bG9QrfzPvEpFXXZ2Ns8++yzPPPMM06dPJyUlhWeeeYb69etTtWrVqONJkiSphLHwxVmXZkfStl6VqGMoztatW8e4ceMYPXo0a9eupWnTpqxcuZJ69erRrl27qONJkiSphLLwSb/RokWLOPbYY8nKyqJLly6kp6fTsWNHEhISoo4mSZKkEs7CJx2gWCzGm2++yYoVK7jqqqsIgoAhQ4bQq1evQnnNFkmSJJVciVEHkIqKHTt28Nhjj9GsWTPOOOMMHnzwQXJzc0lISOD222+37EmSJKnQsfBJeTB16lRq1apF3759KVWqFE8++ST//ve/SUz0r5AkSZIKL5d0Sr/g3//+N2XLlqV+/frUrl2bNm3aMHjwYE466SSPz5MkSVKR4PSEtI/c3FxmzpzJqaeeSvPmzbn33nsBaNGiBdOmTeP3v/+9ZU+SJElFhoVP2mvSpEk0btyYrl27smjRIu677z6GDRsWdSxJkiTpoLmkUyXamjVrqFatGgkJCXz66aeUK1eOp59+mp49e1KqVKmo40mSJEm/iTN8KpE++eQT+vTpQ82aNXn77bcBGDp0KP/617/o3bu3ZU+SJEnFgjN8KjFyc3N57bXXyMzM5N1336VcuXJcc801NGjQAICUlJSIE0qSJEn5y8KnYi8Wi5GQkMDu3bvp168fpUqVYtiwYVx55ZUceuihUceTJEmS4sbCp2Jr5cqVPPzww8yaNYt58+ZRunRp3nnnHerXr09yskNfkiRJxZ/H8KnY+c9xeHXq1GHYsGE0aNCAjRs3AtCwYUPLniRJkkoMv/mqWJkzZw7t27enQoUKDBgwgOuvv57atWtHHUuSJEmKhIVPRdqWLVt4/PHHyc3NJT09nbZt2/Loo49y/vnnU6FChajjSZIkSZFySaeKpG+++YYbbriBGjVqMGjQIN555x0AEhMTueqqqyx7kiRJEhY+FUEjR46kbt26jBgxgi5duvDRRx8xffr0qGNJkiRJhY6FT4Xe7t27eeGFFwjDEIB27drxxz/+kWXLlvHss8/yu9/9LuKEkiRJUuFk4VOhtXnzZh566CHq1atHr169mDBhAgDHH388999/P2lpaREnlCRJkgo3T9qiQunWW29l5MiRbN26lZNOOomRI0dy5plnRh1LkiRJKlKc4VOhEIvFmDdvHrFYDIAdO3bQrVs3Pv74Y959913OOecckpKSIk4pSZIkFS3O8ClSu3bt4sUXXyQjI4N58+bx7rvvctJJJ/HQQw+RkJAQdTxJkiSpSHOGT5HYvn07999/P3Xr1qV37978+OOPjB07llatWgFY9iRJkqR84AyfCtT27dspW7YsiYmJZGRk0KxZM8aNG0fnzp1JTPTnD5IkSVJ+svAp7mKxGH//+9/JyMhgwYIFhGFIamoqCxYsoEqVKlHHkyRJkootp1QUNzt37uSpp57iuOOO4+STT2bu3Ln07t2b7OxsAMueJEmSFGfO8CluZs2aRZ8+fWjcuDGPPPIIF198MWXKlIk6liRJklRiWPji4IOl65n1xZqoYxS4RYsWMXz4cGrWrMktt9xCly5deOuttzjllFM8CYskSZIUAZd0xsGAZz/lybnfkJyYwOHlU6KOE1exWIy33nqLrl270qhRI5544gk2bdoEQFJSEh07drTsSZIkSRFxhi8OdufmckGrNP56VmPKli7ef8Q33HADmZmZVK1alTvuuIN+/fpRtWrVqGNJkiRJwsIXNynJicWy7K1bt46xY8fSq1cvgiDgoosuolmzZlx44YWkpqZGHU+SJEnSPopfI1FcfPnll2RmZjJ58mSys7OpXLkyQRDQsmVLWrZsGXU8SZIkST/DwqdfFYvFOPfcc5k6dSplypThsssuY9CgQTRs2DDqaJIkSZL2w8Kn/7Fjxw5mzpxJjx49SEhIoGnTprRq1Yqrr77aa+dJkiRJRYiFTz9Zs2YNY8aMYezYsaxfv5558+bRsmVL7rrrrqijSZIkSToIXpZBfP/991x22WXUqlWLu+++m3bt2jF79myOO+64qKNJkiRJ+g2c4SuhcnNz+e6770hLS6NcuXLMnj2bvn37MnDgQBo0aBB1PEmSJEn5wMJXwmzfvp1JkyYxfPhwcnNzWbRoEWXLlmXp0qUkJzscJEmSpOLEb/glxKpVqxg1ahTjx49nw4YNHH/88QwePJhYLAZg2ZMkSZKKIb/lF3O5ubkkJibywQcfcP/999OtWzfS09M54YQTSEhIiDqeJEmSpDjypC3FUE5ODq+++iq///3vufvuuwHo1q0bixcv5qWXXqJ9+/aWPUmSJKkEsPAVI1u3bmXUqFEEQUC3bt1YtmwZRx11FLBnyWbdunUjTihJkiSpILmksxjp27cvzz33HG3atGHo0KF0797dY/MkSZKkEswZviLsn//8J71792bp0qUA3HzzzcydO5e5c+fSs2dPy54kSZJUwln4ipicnJyfjsNr3bo1M2bM4P+1d/dBVtX3Hcffy0MB5SnGjCCNLq34HdKwdkaDK4r1IT6QqQY6MmOko8gYTcroEKckUk0z7UC1TSWIVpOglGlIwiSjNpJGbKw1EJRg1rQNFb4VIsGxmkmUFR9gZVn6x7nO3NnCshrvvXuP79fMzt5zf+ec+zkz37n3fPd3zt4tW7YA0NbWRnt7e4MTSpIkSRoonAJqIt3d3UyZMoVt27YxceJEli1bxrx58xg1alSjo0mSJEkagGz4BridO3eydu1arr/+eoYMGcK8efM46aSTuPTSSxk8eHCj40mSJEkawGz4Bqgnn3ySpUuX8sADDzBo0CAuueQSWltbWbhwYaOjSZIkSWoS3sM3wDz77LO0t7czbdo0Hn30URYuXMhzzz1Ha2tro6NJkiRJajLO8A0AnZ2d7Nq1i7a2NsaPH09PTw933XUXV111FSNHjmx0PEmSJElNyoavgXbs2MHy5ctZuXIlJ5xwAlu2bGHkyJFs3ry50dEkSZIklYCXdDZAR0cHs2bNYtKkSdxzzz3MmjWL1atX09LS0uhokiRJkkrEGb462b9/P93d3YwYMYLMZP369SxatIj58+dz/PHHNzqeJEmSpBJyhq/GXnnlFW677TYmTpzIHXfcAcDs2bN5/vnnWbJkic2eJEmSpJpxhq9GOjs7mT9/PqtWreLNN9/k/PPPZ+rUqQAMHTqUoUOHNjihJEmSpLKz4auR9Rs28Mw37mXOnDksWLCAtra2RkeSJEmS9D5Tk4YvIgYBdwOnAF3ANZm5vWr808B1QDewODO/X4sc9dLV1cWaNWu48847uf/++wE4e/p01i3ZxXHHHdfgdJIkSZLer2p1D99MYHhmngHcBNz+9kBEjANuAM4ELgJujYhhNcpRU7t372bx4sW0trYyd+5c9u7dy4svvgjA2LFjbfYkSZIkNVStLuk8C1gHkJmbIuK0qrGpwMbM7AK6ImI70AY8VaMsNbH26Z18dsVPOdAzkjGzl3DyceMYPXoUS57qZs/e/Y2OJ0mSJEk1a/hGA69WLR+IiCGZ2X2IsdeAMX3trKuri61bt773KX8Lb3TupXX8MYwZM5ajjz668mw3AKdNOIqPjH5rwGVWc9m3b581pJqxvlRr1phqyfpSLZWtvmrV8O0BRlUtD6o0e4caGwV09rWzYcOGMXny5Pc24W9p8mQ4ZfyIAZdL5bF161brSzVjfanWrDHVkvWlWhqo9dXR0fGutqvVPXwbgU8AREQ78POqsc3A9IgYHhFjgMnAlhrlkCRJkqT3rVrN8D0IXBARTwAtwNURcSOwPTMfiojlwAaKhvPmzNxXoxySJEmS9L5Vk4YvM3uAz/R6elvV+ApgRS1eW5IkSZJUqNUlnZIkSZKkBrPhkyRJkqSSsuGTJEmSpJKy4ZMkSZKkkrLhkyRJkqSSsuGTJEmSpJKy4ZMkSZKkkrLhkyRJkqSSsuGTJEmSpJKy4ZMkSZKkkrLhkyRJkqSSsuGTJEmSpJJqOXjwYKMzHFFHR8evgV82OockSZIkNciJp5566ofe6UZN0fBJkiRJkt45L+mUJEmSpJKy4ZMkSZKkkrLhkyRJkqSSsuGTJEmSpJKy4ZMkSZKkkrLhkyRJkqSSGtLoAM0gIgYBdwOnAF3ANZm5vWr808B1QDewODO/35Cgakr9qK/PAZdXFn+QmX9V/5RqVkeqr6p1/gX4XmZ+tf4p1az68f41A/hSZfFpYH5m+n1Q6pd+1NefA58CeoC/ycwHGxJUTS0iTgf+NjPP6fX8JcBfUpzfr8zMFQ2I955whq9/ZgLDM/MM4Cbg9rcHImIccANwJnARcGtEDGtISjWrvurr94A5wDTgDODCiGhrSEo1q8PWV5XFwDF1TaWy6Ov9axTwZeCPM7Md2Akc24iQalp91ddYivOvM4ALgWUNSaimFhGfB+4Fhvd6fijwFYra+iPg2so5f1Oy4eufs4B1AJm5CTitamwqsDEzuzLzVWA74Am53om+6ut54OLMPJCZPcBQYF/9I6qJ9VVfRMRlFH8df7j+0VQCfdXXNODnwO0RsQH4VWb+uv4R1cT6qq83gF8CR1d+euqeTmWwA/iTQzw/Gdiembsz8y3gx8D0uiZ7D9nw9c9o4NWq5QMRMeQwY68BY+oVTKVw2PrKzP2Z+ZuIaImIvwd+lpn/05CUalaHra+I+ChwBcUlK9K70dfn47HAucAXgBnAgog4uc751Nz6qi8o/ij6DMXlwsvrGUzlkJn3A/sPMVSq83sbvv7ZA4yqWh6Umd2HGRsFdNYrmEqhr/oiIoYD36ys82d1zqbm11d9XQlMAB4D5gI3RsTF9Y2nJtdXfb0MPJWZL2Xm68B64A/rHVBNra/6mgGMByYCJwAzI2JqnfOpvEp1fm/D1z8bgU8AREQ7xSUqb9sMTI+I4RExhmIKeEv9I6qJHba+IqIF+B7wn5l5XWYeaExENbHD1ldmfj4zT6/cqL4KWJqZ6xoRUk2rr8/HDuCjEXFsZVamnWI2RuqvvuprN7AX6MrMfRQn42PrnlBltRWYFBHHRMTvAGcDTzY407vmf+nsnweBCyLiCaAFuDoibqS4tvehiFgObKBooG+uvPFI/XXY+gIGU9wsPKzy3+4AFmVm077pqO76fP9qbDSVwJE+HxcBj1TW/U5m+gdRvRNHqq+PA5sioofiHqsfNjCrSiAirgBGZubXK7X2CMX5/crMfKGx6d69loMH/e/IkiRJklRGXtIpSZIkSSVlwydJkiRJJWXDJ0mSJEklZcMnSZIkSSVlwydJkiRJJeXXMkiSGi4iWoH/Ap6uevqxzPzrw6y/CljTqO8NjIhlwFLgdeDizPxWRNxEkXlzDV/3WuAfM3N/rV5DklQuNnySpIHimcqXwA94mbkAICLOAS4FvpWZt9Xhpf8C+CfAhk+S1C82fJKkASsiBgNfAz4MfBB4ODO/WDV+MrCKogHqBq7MzBci4lbgbIpbF5Zm5nd77fcXwE+A3we2ANcAo4HVld9DgFsy87GIWAKcV9nXtzNzWUQ8DnwGuBk4pTLzNg1YA1wL3JGZP4qIjwG3AJcBXwUmVfZzS2Y+XpWnFVgLvAz8oJLtS5Xho4ArgenAuMprzDzSMUqSBN7DJ0kaOD4SEY9X/UygaPQ2ZeZFwFnAZ3ttcwHQAXwcWAJ8ICJmABMz80zgXODmiBjba7vfBb6YmVOBkcBMisbsh5l5NjAbuC8iBlE0W1dQNFd7e+1nCcVlnF+vem4FcFXl8dzK8jXAbyr7/iTwD4c4/nHAhZn5d8AfAH+amecBDwGzM/M+4CXg8n4eoyRJzvBJkgaM/3dJZ0SMBj4WEecCe4Bhvba5D/gCsA54leKSxynAqZVZOIChwIlAZ9V2uzJze+XxE0AAk4FvAlRmCfcAHwIuB26laMge7sdxPAJ8OSKOoZiVuwG4E5geEadX1hkSER/MzJertnsuM9+qPH4BWB4RrwMTgI29XqM/xyhJkjN8kqQBbS7QmZlzgNuBoyKipWr8k8CGzDwf+C5F87cN+PdK83ge8B3gF732OyEixlUenwn8N7CVokGjMrv4AYoGajbwqcq+5kbEiVX76aHXZ2lm9lSy3AP8c2YeqGT6diXTjMr47l6Zeqoe3wtcnZlzgf8FWqrWGdTPY5QkyRk+SdKA9m/AmoiYDrwBPAscXzX+U2B1RHRTNEOfA34GnBMRGygu13wwM1/rtd8u4K6I+DCwieL+uR8DKyPiMmAEcG1mdkXEK8B/UDRo/wrsqtrPDmBKRCzotf+VFA3YpMry14AVEfEjinsE7640hofzDeAnEbEb+FXVMW+guMfv3H4coyRJtBw8eLDRGSRJqquIeCkzxx15TUmSmpuXdEqSJElSSTnDJ0mSJEkl5QyfJEmSJJWUDZ8kSZIklZQNnyRJkiSVlA2fJEmSJJWUDZ8kSZIkldT/AcbEjUlntFFcAAAAAElFTkSuQmCC\n",
+      "text/plain": [
+       "<Figure size 1080x1080 with 2 Axes>"
+      ]
+     },
+     "metadata": {},
+     "output_type": "display_data"
+    }
+   ],
+   "source": [
+    "y_score = proba_sm[2]\n",
+    "precision, recall, thresholds = precision_recall_curve(y_t[2], y_score)\n",
+    "from sklearn.metrics import average_precision_score\n",
+    "average_precision = average_precision_score(y_t[2], y_score)\n",
+    "\n",
+    "print('Average precision-recall score: {0:0.2f}'.format(\n",
+    "      average_precision))\n",
+    "from sklearn.utils.fixes import signature\n",
+    "step_kwargs = ({'step': 'post'}\n",
+    "               if 'step' in signature(plt.fill_between).parameters\n",
+    "               else {})\n",
+    "plt.figure(figsize=(15,15))\n",
+    "plt.subplot(2, 1, 1)\n",
+    "plt.step(recall, precision, color='b', alpha=0.2,\n",
+    "         where='post')\n",
+    "plt.fill_between(recall, precision, alpha=0.2, color='b', **step_kwargs)\n",
+    "\n",
+    "plt.xlabel('Recall')\n",
+    "plt.ylabel('Precision')\n",
+    "plt.ylim([0.0, 1.05])\n",
+    "plt.xlim([0.0, 1.0])\n",
+    "plt.title('2-class Precision-Recall curve: AP={0:0.2f}'.format(\n",
+    "          average_precision))\n",
+    "plt.subplot(2,1,2)\n",
+    "fpr, tpr, _ = roc_curve(y_t[2], y_score)\n",
+    "auc_score = roc_auc_score(y_t[2], y_score)\n",
+    "\n",
+    "plt.plot([0, 1], [0, 1], 'k--')\n",
+    "plt.plot(fpr, tpr)\n",
+    "plt.xlabel('False positive rate')\n",
+    "plt.ylabel('True positive rate')\n",
+    "plt.title('ROC curve: AUC Score = {0:0.2f}'.format(\n",
+    "          auc_score))\n",
+    "plt.show()"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "### Extra-Trees Classifier"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 22,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "clf = ExtraTreesClassifier(criterion = 'entropy', max_features = 'auto', min_samples_leaf = 2, min_samples_split = 2,\n",
+    "                            n_estimators = 500)"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 23,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "AUC_LR_sm = []\n",
+    "AUC_LR = []\n",
+    "proba_sm = []\n",
+    "proba = []\n",
+    "y_t = []\n",
+    "y = df['crisisST'].values\n",
+    "X = df.drop(['crisisST'], axis=1).values\n",
+    "scaler = StandardScaler()\n",
+    "X  = scaler.fit_transform(X)\n",
+    "sm = SMOTE(0.5,random_state=42)\n",
+    "tscv = TimeSeriesSplit(n_splits=n)\n",
+    "for train_index, test_index in tscv.split(X):\n",
+    "    X_train, X_test = X[train_index], X[test_index]\n",
+    "    y_train, y_test = y[train_index], y[test_index]\n",
+    "    y_t.append(y_test)\n",
+    "    X_train_sm, y_train_sm = sm.fit_resample(X_train, y_train)\n",
+    "    clf.fit(X_train_sm, y_train_sm)\n",
+    "    y_proba1 = clf.predict_proba(X_test)\n",
+    "    clf.fit(X_train, y_train)\n",
+    "    y_proba = clf.predict_proba(X_test)\n",
+    "    AUC_LR.append(roc_auc_score(y_test, y_proba[:,1]))\n",
+    "    proba.append(list(y_proba[:,1]))\n",
+    "    AUC_LR_sm.append(roc_auc_score(y_test, y_proba1[:,1]))\n",
+    "    proba_sm.append(list(y_proba1[:,1]))"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 24,
+   "metadata": {},
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "--------------------------------------------------------------------------------\n",
+      "AUC Score: 0.29215456674473067\n",
+      "Confusion_Matrix 1\n",
+      "[[244   0]\n",
+      " [  7   0]]\n",
+      "--------------------------------------------------------------------------------\n",
+      "AUC Score: 0.7037037037037037\n",
+      "Confusion_Matrix 2\n",
+      "[[243   0]\n",
+      " [  8   0]]\n",
+      "--------------------------------------------------------------------------------\n",
+      "AUC Score: 0.5322524407252441\n",
+      "Confusion_Matrix 3\n",
+      "[[239   0]\n",
+      " [ 12   0]]\n",
+      "--------------------------------------------------------------------------------\n",
+      "AUC Score: 0.42798594847775173\n",
+      "Confusion_Matrix 1\n",
+      "[[244   0]\n",
+      " [  7   0]]\n",
+      "--------------------------------------------------------------------------------\n",
+      "AUC Score: 0.5823045267489712\n",
+      "Confusion_Matrix 2\n",
+      "[[243   0]\n",
+      " [  8   0]]\n",
+      "--------------------------------------------------------------------------------\n",
+      "AUC Score: 0.5781032078103208\n",
+      "Confusion_Matrix 3\n",
+      "[[234   5]\n",
+      " [ 12   0]]\n"
+     ]
+    },
+    {
+     "data": {
+      "text/plain": [
+       "(None, None)"
+      ]
+     },
+     "execution_count": 24,
+     "metadata": {},
+     "output_type": "execute_result"
+    }
+   ],
+   "source": [
+    "def conf_mat(prob, AUC):\n",
+    "    for i in range(n):\n",
+    "        y_pred = []\n",
+    "        for j in range(len(prob[i])):\n",
+    "            if prob[i][j]>0.5:\n",
+    "                y_pred.append(1)\n",
+    "            else: \n",
+    "                y_pred.append(0)\n",
+    "        print( \"-\"*80)\n",
+    "        print('AUC Score:', AUC[i])\n",
+    "        print('Confusion_Matrix', i+1)\n",
+    "        print(confusion_matrix(y_t[i],y_pred))\n",
+    "conf_mat(proba, AUC_LR), conf_mat(proba_sm, AUC_LR_sm)"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "### Decision Tree Classifier"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 25,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "clf = DecisionTreeClassifier()"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 26,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "AUC_LR_sm = []\n",
+    "AUC_LR = []\n",
+    "proba_sm = []\n",
+    "proba = []\n",
+    "y_t = []\n",
+    "y = df['crisisST'].values\n",
+    "X = df.drop(['crisisST'], axis=1).values\n",
+    "scaler = StandardScaler()\n",
+    "X  = scaler.fit_transform(X)\n",
+    "sm = SMOTE(0.5,random_state=42)\n",
+    "tscv = TimeSeriesSplit(n_splits=n)\n",
+    "for train_index, test_index in tscv.split(X):\n",
+    "    X_train, X_test = X[train_index], X[test_index]\n",
+    "    y_train, y_test = y[train_index], y[test_index]\n",
+    "    y_t.append(y_test)\n",
+    "    X_train_sm, y_train_sm = sm.fit_resample(X_train, y_train)\n",
+    "    clf.fit(X_train_sm, y_train_sm)\n",
+    "    y_proba1 = clf.predict_proba(X_test)\n",
+    "    clf.fit(X_train, y_train)\n",
+    "    y_proba = clf.predict_proba(X_test)\n",
+    "    AUC_LR.append(roc_auc_score(y_test, y_proba[:,1]))\n",
+    "    proba.append(list(y_proba[:,1]))\n",
+    "    AUC_LR_sm.append(roc_auc_score(y_test, y_proba1[:,1]))\n",
+    "    proba_sm.append(list(y_proba1[:,1]))"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 27,
+   "metadata": {},
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "--------------------------------------------------------------------------------\n",
+      "AUC Score: 0.4294496487119438\n",
+      "Confusion_Matrix 1\n",
+      "[[105 139]\n",
+      " [  4   3]]\n",
+      "--------------------------------------------------------------------------------\n",
+      "AUC Score: 0.49588477366255146\n",
+      "Confusion_Matrix 2\n",
+      "[[241   2]\n",
+      " [  8   0]]\n",
+      "--------------------------------------------------------------------------------\n",
+      "AUC Score: 0.4916317991631799\n",
+      "Confusion_Matrix 3\n",
+      "[[235   4]\n",
+      " [ 12   0]]\n",
+      "--------------------------------------------------------------------------------\n",
+      "AUC Score: 0.3790983606557377\n",
+      "Confusion_Matrix 1\n",
+      "[[185  59]\n",
+      " [  7   0]]\n",
+      "--------------------------------------------------------------------------------\n",
+      "AUC Score: 0.5\n",
+      "Confusion_Matrix 2\n",
+      "[[243   0]\n",
+      " [  8   0]]\n",
+      "--------------------------------------------------------------------------------\n",
+      "AUC Score: 0.4916317991631799\n",
+      "Confusion_Matrix 3\n",
+      "[[235   4]\n",
+      " [ 12   0]]\n"
+     ]
+    },
+    {
+     "data": {
+      "text/plain": [
+       "(None, None)"
+      ]
+     },
+     "execution_count": 27,
+     "metadata": {},
+     "output_type": "execute_result"
+    }
+   ],
+   "source": [
+    "def conf_mat(prob, AUC):\n",
+    "    for i in range(n):\n",
+    "        y_pred = []\n",
+    "        for j in range(len(prob[i])):\n",
+    "            if prob[i][j]>0.5:\n",
+    "                y_pred.append(1)\n",
+    "            else: \n",
+    "                y_pred.append(0)\n",
+    "        print( \"-\"*80)\n",
+    "        print('AUC Score:', AUC[i])\n",
+    "        print('Confusion_Matrix', i+1)\n",
+    "        print(confusion_matrix(y_t[i],y_pred))\n",
+    "conf_mat(proba, AUC_LR), conf_mat(proba_sm, AUC_LR_sm)"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "### BaggingClassifier"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 28,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "clf = BaggingClassifier()"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 29,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "AUC_LR_sm = []\n",
+    "AUC_LR = []\n",
+    "proba_sm = []\n",
+    "proba = []\n",
+    "y_t = []\n",
+    "y = df['crisisST'].values\n",
+    "X = df.drop(['crisisST'], axis=1).values\n",
+    "scaler = StandardScaler()\n",
+    "X  = scaler.fit_transform(X)\n",
+    "sm = SMOTE(0.5,random_state=42)\n",
+    "tscv = TimeSeriesSplit(n_splits=n)\n",
+    "for train_index, test_index in tscv.split(X):\n",
+    "    X_train, X_test = X[train_index], X[test_index]\n",
+    "    y_train, y_test = y[train_index], y[test_index]\n",
+    "    y_t.append(y_test)\n",
+    "    X_train_sm, y_train_sm = sm.fit_resample(X_train, y_train)\n",
+    "    clf.fit(X_train_sm, y_train_sm)\n",
+    "    y_proba1 = clf.predict_proba(X_test)\n",
+    "    clf.fit(X_train, y_train)\n",
+    "    y_proba = clf.predict_proba(X_test)\n",
+    "    AUC_LR.append(roc_auc_score(y_test, y_proba[:,1]))\n",
+    "    proba.append(list(y_proba[:,1]))\n",
+    "    AUC_LR_sm.append(roc_auc_score(y_test, y_proba1[:,1]))\n",
+    "    proba_sm.append(list(y_proba1[:,1]))"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 30,
+   "metadata": {},
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "--------------------------------------------------------------------------------\n",
+      "AUC Score: 0.27195550351288056\n",
+      "Confusion_Matrix 1\n",
+      "[[123 121]\n",
+      " [  5   2]]\n",
+      "--------------------------------------------------------------------------------\n",
+      "AUC Score: 0.702417695473251\n",
+      "Confusion_Matrix 2\n",
+      "[[243   0]\n",
+      " [  8   0]]\n",
+      "--------------------------------------------------------------------------------\n",
+      "AUC Score: 0.46234309623430964\n",
+      "Confusion_Matrix 3\n",
+      "[[235   4]\n",
+      " [ 12   0]]\n",
+      "--------------------------------------------------------------------------------\n",
+      "AUC Score: 0.35597189695550346\n",
+      "Confusion_Matrix 1\n",
+      "[[239   5]\n",
+      " [  7   0]]\n",
+      "--------------------------------------------------------------------------------\n",
+      "AUC Score: 0.4609053497942387\n",
+      "Confusion_Matrix 2\n",
+      "[[243   0]\n",
+      " [  8   0]]\n",
+      "--------------------------------------------------------------------------------\n",
+      "AUC Score: 0.46234309623430964\n",
+      "Confusion_Matrix 3\n",
+      "[[237   2]\n",
+      " [ 12   0]]\n"
+     ]
+    },
+    {
+     "data": {
+      "text/plain": [
+       "(None, None)"
+      ]
+     },
+     "execution_count": 30,
+     "metadata": {},
+     "output_type": "execute_result"
+    }
+   ],
+   "source": [
+    "def conf_mat(prob, AUC):\n",
+    "    for i in range(n):\n",
+    "        y_pred = []\n",
+    "        for j in range(len(prob[i])):\n",
+    "            if prob[i][j]>0.5:\n",
+    "                y_pred.append(1)\n",
+    "            else: \n",
+    "                y_pred.append(0)\n",
+    "        print( \"-\"*80)\n",
+    "        print('AUC Score:', AUC[i])\n",
+    "        print('Confusion_Matrix', i+1)\n",
+    "        print(confusion_matrix(y_t[i],y_pred))\n",
+    "conf_mat(proba, AUC_LR), conf_mat(proba_sm, AUC_LR_sm)"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "### AdaBoost Classifier"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 31,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "clf = AdaBoostClassifier()"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 32,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "AUC_LR_sm = []\n",
+    "AUC_LR = []\n",
+    "proba_sm = []\n",
+    "proba = []\n",
+    "y_t = []\n",
+    "y = df['crisisST'].values\n",
+    "X = df.drop(['crisisST'], axis=1).values\n",
+    "scaler = StandardScaler()\n",
+    "X  = scaler.fit_transform(X)\n",
+    "sm = SMOTE(0.5,random_state=42)\n",
+    "tscv = TimeSeriesSplit(n_splits=n)\n",
+    "for train_index, test_index in tscv.split(X):\n",
+    "    X_train, X_test = X[train_index], X[test_index]\n",
+    "    y_train, y_test = y[train_index], y[test_index]\n",
+    "    y_t.append(y_test)\n",
+    "    X_train_sm, y_train_sm = sm.fit_resample(X_train, y_train)\n",
+    "    clf.fit(X_train_sm, y_train_sm)\n",
+    "    y_proba1 = clf.predict_proba(X_test)\n",
+    "    clf.fit(X_train, y_train)\n",
+    "    y_proba = clf.predict_proba(X_test)\n",
+    "    AUC_LR.append(roc_auc_score(y_test, y_proba[:,1]))\n",
+    "    proba.append(list(y_proba[:,1]))\n",
+    "    AUC_LR_sm.append(roc_auc_score(y_test, y_proba1[:,1]))\n",
+    "    proba_sm.append(list(y_proba1[:,1]))"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 33,
+   "metadata": {},
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "--------------------------------------------------------------------------------\n",
+      "AUC Score: 0.681791569086651\n",
+      "Confusion_Matrix 1\n",
+      "[[228  16]\n",
+      " [  6   1]]\n",
+      "--------------------------------------------------------------------------------\n",
+      "AUC Score: 0.54809670781893\n",
+      "Confusion_Matrix 2\n",
+      "[[243   0]\n",
+      " [  8   0]]\n",
+      "--------------------------------------------------------------------------------\n",
+      "AUC Score: 0.5934449093444909\n",
+      "Confusion_Matrix 3\n",
+      "[[239   0]\n",
+      " [ 12   0]]\n",
+      "--------------------------------------------------------------------------------\n",
+      "AUC Score: 0.8416276346604216\n",
+      "Confusion_Matrix 1\n",
+      "[[243   1]\n",
+      " [  6   1]]\n",
+      "--------------------------------------------------------------------------------\n",
+      "AUC Score: 0.4678497942386831\n",
+      "Confusion_Matrix 2\n",
+      "[[243   0]\n",
+      " [  8   0]]\n",
+      "--------------------------------------------------------------------------------\n",
+      "AUC Score: 0.6514993026499303\n",
+      "Confusion_Matrix 3\n",
+      "[[228  11]\n",
+      " [ 11   1]]\n"
+     ]
+    },
+    {
+     "data": {
+      "text/plain": [
+       "(None, None)"
+      ]
+     },
+     "execution_count": 33,
+     "metadata": {},
+     "output_type": "execute_result"
+    }
+   ],
+   "source": [
+    "def conf_mat(prob, AUC):\n",
+    "    for i in range(n):\n",
+    "        y_pred = []\n",
+    "        for j in range(len(prob[i])):\n",
+    "            if prob[i][j]>0.5:\n",
+    "                y_pred.append(1)\n",
+    "            else: \n",
+    "                y_pred.append(0)\n",
+    "        print( \"-\"*80)\n",
+    "        print('AUC Score:', AUC[i])\n",
+    "        print('Confusion_Matrix', i+1)\n",
+    "        print(confusion_matrix(y_t[i],y_pred))\n",
+    "conf_mat(proba, AUC_LR), conf_mat(proba_sm, AUC_LR_sm)"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "### GradientBoostingClassifier"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 34,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "clf = GradientBoostingClassifier()"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 35,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "AUC_LR_sm = []\n",
+    "AUC_LR = []\n",
+    "proba_sm = []\n",
+    "proba = []\n",
+    "y_t = []\n",
+    "y = df['crisisST'].values\n",
+    "X = df.drop(['crisisST'], axis=1).values\n",
+    "scaler = StandardScaler()\n",
+    "X  = scaler.fit_transform(X)\n",
+    "sm = SMOTE(0.5,random_state=42)\n",
+    "tscv = TimeSeriesSplit(n_splits=n)\n",
+    "for train_index, test_index in tscv.split(X):\n",
+    "    X_train, X_test = X[train_index], X[test_index]\n",
+    "    y_train, y_test = y[train_index], y[test_index]\n",
+    "    y_t.append(y_test)\n",
+    "    X_train_sm, y_train_sm = sm.fit_resample(X_train, y_train)\n",
+    "    clf.fit(X_train_sm, y_train_sm)\n",
+    "    y_proba1 = clf.predict_proba(X_test)\n",
+    "    clf.fit(X_train, y_train)\n",
+    "    y_proba = clf.predict_proba(X_test)\n",
+    "    AUC_LR.append(roc_auc_score(y_test, y_proba[:,1]))\n",
+    "    proba.append(list(y_proba[:,1]))\n",
+    "    AUC_LR_sm.append(roc_auc_score(y_test, y_proba1[:,1]))\n",
+    "    proba_sm.append(list(y_proba1[:,1]))"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 36,
+   "metadata": {},
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "--------------------------------------------------------------------------------\n",
+      "AUC Score: 0.2543911007025761\n",
+      "Confusion_Matrix 1\n",
+      "[[133 111]\n",
+      " [  7   0]]\n",
+      "--------------------------------------------------------------------------------\n",
+      "AUC Score: 0.6790123456790123\n",
+      "Confusion_Matrix 2\n",
+      "[[243   0]\n",
+      " [  8   0]]\n",
+      "--------------------------------------------------------------------------------\n",
+      "AUC Score: 0.5559623430962344\n",
+      "Confusion_Matrix 3\n",
+      "[[236   3]\n",
+      " [ 12   0]]\n",
+      "--------------------------------------------------------------------------------\n",
+      "AUC Score: 0.4279859484777518\n",
+      "Confusion_Matrix 1\n",
+      "[[242   2]\n",
+      " [  7   0]]\n",
+      "--------------------------------------------------------------------------------\n",
+      "AUC Score: 0.45884773662551437\n",
+      "Confusion_Matrix 2\n",
+      "[[243   0]\n",
+      " [  8   0]]\n",
+      "--------------------------------------------------------------------------------\n",
+      "AUC Score: 0.539400278940028\n",
+      "Confusion_Matrix 3\n",
+      "[[235   4]\n",
+      " [ 12   0]]\n"
+     ]
+    },
+    {
+     "data": {
+      "text/plain": [
+       "(None, None)"
+      ]
+     },
+     "execution_count": 36,
+     "metadata": {},
+     "output_type": "execute_result"
+    }
+   ],
+   "source": [
+    "def conf_mat(prob, AUC):\n",
+    "    for i in range(n):\n",
+    "        y_pred = []\n",
+    "        for j in range(len(prob[i])):\n",
+    "            if prob[i][j]>0.5:\n",
+    "                y_pred.append(1)\n",
+    "            else: \n",
+    "                y_pred.append(0)\n",
+    "        print( \"-\"*80)\n",
+    "        print('AUC Score:', AUC[i])\n",
+    "        print('Confusion_Matrix', i+1)\n",
+    "        print(confusion_matrix(y_t[i],y_pred))\n",
+    "conf_mat(proba, AUC_LR), conf_mat(proba_sm, AUC_LR_sm)"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "### XGBoost Classifier"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 37,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "clf = XGBClassifier()"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 38,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "AUC_LR_sm = []\n",
+    "AUC_LR = []\n",
+    "proba_sm = []\n",
+    "proba = []\n",
+    "y_t = []\n",
+    "y = df['crisisST'].values\n",
+    "X = df.drop(['crisisST'], axis=1).values\n",
+    "scaler = StandardScaler()\n",
+    "X  = scaler.fit_transform(X)\n",
+    "sm = SMOTE(0.5,random_state=42)\n",
+    "tscv = TimeSeriesSplit(n_splits=n)\n",
+    "for train_index, test_index in tscv.split(X):\n",
+    "    X_train, X_test = X[train_index], X[test_index]\n",
+    "    y_train, y_test = y[train_index], y[test_index]\n",
+    "    y_t.append(y_test)\n",
+    "    X_train_sm, y_train_sm = sm.fit_resample(X_train, y_train)\n",
+    "    clf.fit(X_train_sm, y_train_sm)\n",
+    "    y_proba1 = clf.predict_proba(X_test)\n",
+    "    clf.fit(X_train, y_train)\n",
+    "    y_proba = clf.predict_proba(X_test)\n",
+    "    AUC_LR.append(roc_auc_score(y_test, y_proba[:,1]))\n",
+    "    proba.append(list(y_proba[:,1]))\n",
+    "    AUC_LR_sm.append(roc_auc_score(y_test, y_proba1[:,1]))\n",
+    "    proba_sm.append(list(y_proba1[:,1]))"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 39,
+   "metadata": {},
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "--------------------------------------------------------------------------------\n",
+      "AUC Score: 0.6902810304449648\n",
+      "Confusion_Matrix 1\n",
+      "[[244   0]\n",
+      " [  7   0]]\n",
+      "--------------------------------------------------------------------------------\n",
+      "AUC Score: 0.621656378600823\n",
+      "Confusion_Matrix 2\n",
+      "[[243   0]\n",
+      " [  8   0]]\n",
+      "--------------------------------------------------------------------------------\n",
+      "AUC Score: 0.548465829846583\n",
+      "Confusion_Matrix 3\n",
+      "[[239   0]\n",
+      " [ 12   0]]\n",
+      "--------------------------------------------------------------------------------\n",
+      "AUC Score: 0.623536299765808\n",
+      "Confusion_Matrix 1\n",
+      "[[244   0]\n",
+      " [  7   0]]\n",
+      "--------------------------------------------------------------------------------\n",
+      "AUC Score: 0.47247942386831276\n",
+      "Confusion_Matrix 2\n",
+      "[[243   0]\n",
+      " [  8   0]]\n",
+      "--------------------------------------------------------------------------------\n",
+      "AUC Score: 0.5725244072524407\n",
+      "Confusion_Matrix 3\n",
+      "[[235   4]\n",
+      " [ 12   0]]\n"
+     ]
+    },
+    {
+     "data": {
+      "text/plain": [
+       "(None, None)"
+      ]
+     },
+     "execution_count": 39,
+     "metadata": {},
+     "output_type": "execute_result"
+    }
+   ],
+   "source": [
+    "def conf_mat(prob, AUC):\n",
+    "    for i in range(n):\n",
+    "        y_pred = []\n",
+    "        for j in range(len(prob[i])):\n",
+    "            if prob[i][j]>0.5:\n",
+    "                y_pred.append(1)\n",
+    "            else: \n",
+    "                y_pred.append(0)\n",
+    "        print( \"-\"*80)\n",
+    "        print('AUC Score:', AUC[i])\n",
+    "        print('Confusion_Matrix', i+1)\n",
+    "        print(confusion_matrix(y_t[i],y_pred))\n",
+    "conf_mat(proba, AUC_LR), conf_mat(proba_sm, AUC_LR_sm)"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "### KNeighbors Classifier"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 40,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "clf = KNeighborsClassifier(5)"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 41,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "AUC_LR_sm = []\n",
+    "AUC_LR = []\n",
+    "proba_sm = []\n",
+    "proba = []\n",
+    "y_t = []\n",
+    "y = df['crisisST'].values\n",
+    "X = df.drop(['crisisST'], axis=1).values\n",
+    "scaler = StandardScaler()\n",
+    "X  = scaler.fit_transform(X)\n",
+    "sm = SMOTE(0.5,random_state=42)\n",
+    "tscv = TimeSeriesSplit(n_splits=n)\n",
+    "for train_index, test_index in tscv.split(X):\n",
+    "    X_train, X_test = X[train_index], X[test_index]\n",
+    "    y_train, y_test = y[train_index], y[test_index]\n",
+    "    y_t.append(y_test)\n",
+    "    X_train_sm, y_train_sm = sm.fit_resample(X_train, y_train)\n",
+    "    clf.fit(X_train_sm, y_train_sm)\n",
+    "    y_proba1 = clf.predict_proba(X_test)\n",
+    "    clf.fit(X_train, y_train)\n",
+    "    y_proba = clf.predict_proba(X_test)\n",
+    "    AUC_LR.append(roc_auc_score(y_test, y_proba[:,1]))\n",
+    "    proba.append(list(y_proba[:,1]))\n",
+    "    AUC_LR_sm.append(roc_auc_score(y_test, y_proba1[:,1]))\n",
+    "    proba_sm.append(list(y_proba1[:,1]))"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 42,
+   "metadata": {},
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "--------------------------------------------------------------------------------\n",
+      "AUC Score: 0.5670374707259952\n",
+      "Confusion_Matrix 1\n",
+      "[[244   0]\n",
+      " [  7   0]]\n",
+      "--------------------------------------------------------------------------------\n",
+      "AUC Score: 0.5\n",
+      "Confusion_Matrix 2\n",
+      "[[243   0]\n",
+      " [  8   0]]\n",
+      "--------------------------------------------------------------------------------\n",
+      "AUC Score: 0.4874476987447699\n",
+      "Confusion_Matrix 3\n",
+      "[[239   0]\n",
+      " [ 12   0]]\n",
+      "--------------------------------------------------------------------------------\n",
+      "AUC Score: 0.5822599531615925\n",
+      "Confusion_Matrix 1\n",
+      "[[241   3]\n",
+      " [  6   1]]\n",
+      "--------------------------------------------------------------------------------\n",
+      "AUC Score: 0.5\n",
+      "Confusion_Matrix 2\n",
+      "[[243   0]\n",
+      " [  8   0]]\n",
+      "--------------------------------------------------------------------------------\n",
+      "AUC Score: 0.5247559274755927\n",
+      "Confusion_Matrix 3\n",
+      "[[236   3]\n",
+      " [ 12   0]]\n"
+     ]
+    },
+    {
+     "data": {
+      "text/plain": [
+       "(None, None)"
+      ]
+     },
+     "execution_count": 42,
+     "metadata": {},
+     "output_type": "execute_result"
+    }
+   ],
+   "source": [
+    "def conf_mat(prob, AUC):\n",
+    "    for i in range(n):\n",
+    "        y_pred = []\n",
+    "        for j in range(len(prob[i])):\n",
+    "            if prob[i][j]>0.5:\n",
+    "                y_pred.append(1)\n",
+    "            else: \n",
+    "                y_pred.append(0)\n",
+    "        print( \"-\"*80)\n",
+    "        print('AUC Score:', AUC[i])\n",
+    "        print('Confusion_Matrix', i+1)\n",
+    "        print(confusion_matrix(y_t[i],y_pred))\n",
+    "conf_mat(proba, AUC_LR), conf_mat(proba_sm, AUC_LR_sm)"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "### Naive Bayes"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 43,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "clf = GaussianNB()"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 44,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "AUC_LR_sm = []\n",
+    "AUC_LR = []\n",
+    "proba_sm = []\n",
+    "proba = []\n",
+    "y_t = []\n",
+    "y = df['crisisST'].values\n",
+    "X = df.drop(['crisisST'], axis=1).values\n",
+    "scaler = StandardScaler()\n",
+    "X  = scaler.fit_transform(X)\n",
+    "sm = SMOTE(0.5,random_state=42)\n",
+    "tscv = TimeSeriesSplit(n_splits=n)\n",
+    "for train_index, test_index in tscv.split(X):\n",
+    "    X_train, X_test = X[train_index], X[test_index]\n",
+    "    y_train, y_test = y[train_index], y[test_index]\n",
+    "    y_t.append(y_test)\n",
+    "    X_train_sm, y_train_sm = sm.fit_resample(X_train, y_train)\n",
+    "    clf.fit(X_train_sm, y_train_sm)\n",
+    "    y_proba1 = clf.predict_proba(X_test)\n",
+    "    clf.fit(X_train, y_train)\n",
+    "    y_proba = clf.predict_proba(X_test)\n",
+    "    AUC_LR.append(roc_auc_score(y_test, y_proba[:,1]))\n",
+    "    proba.append(list(y_proba[:,1]))\n",
+    "    AUC_LR_sm.append(roc_auc_score(y_test, y_proba1[:,1]))\n",
+    "    proba_sm.append(list(y_proba1[:,1]))"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 45,
+   "metadata": {},
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "--------------------------------------------------------------------------------\n",
+      "AUC Score: 0.5579625292740047\n",
+      "Confusion_Matrix 1\n",
+      "[[219  25]\n",
+      " [  7   0]]\n",
+      "--------------------------------------------------------------------------------\n",
+      "AUC Score: 0.48431069958847733\n",
+      "Confusion_Matrix 2\n",
+      "[[236   7]\n",
+      " [  7   1]]\n",
+      "--------------------------------------------------------------------------------\n",
+      "AUC Score: 0.46652719665271963\n",
+      "Confusion_Matrix 3\n",
+      "[[196  43]\n",
+      " [ 10   2]]\n",
+      "--------------------------------------------------------------------------------\n",
+      "AUC Score: 0.6329039812646371\n",
+      "Confusion_Matrix 1\n",
+      "[[244   0]\n",
+      " [  7   0]]\n",
+      "--------------------------------------------------------------------------------\n",
+      "AUC Score: 0.4441872427983539\n",
+      "Confusion_Matrix 2\n",
+      "[[237   6]\n",
+      " [  7   1]]\n",
+      "--------------------------------------------------------------------------------\n",
+      "AUC Score: 0.45955369595536966\n",
+      "Confusion_Matrix 3\n",
+      "[[164  75]\n",
+      " [  9   3]]\n"
+     ]
+    },
+    {
+     "data": {
+      "text/plain": [
+       "(None, None)"
+      ]
+     },
+     "execution_count": 45,
+     "metadata": {},
+     "output_type": "execute_result"
+    }
+   ],
+   "source": [
+    "def conf_mat(prob, AUC):\n",
+    "    for i in range(n):\n",
+    "        y_pred = []\n",
+    "        for j in range(len(prob[i])):\n",
+    "            if prob[i][j]>0.5:\n",
+    "                y_pred.append(1)\n",
+    "            else: \n",
+    "                y_pred.append(0)\n",
+    "        print( \"-\"*80)\n",
+    "        print('AUC Score:', AUC[i])\n",
+    "        print('Confusion_Matrix', i+1)\n",
+    "        print(confusion_matrix(y_t[i],y_pred))\n",
+    "conf_mat(proba, AUC_LR), conf_mat(proba_sm, AUC_LR_sm)"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "### Linear Discriminant Analysis"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 42,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "clf = LinearDiscriminantAnalysis()"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 43,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "AUC_LR_sm = []\n",
+    "AUC_LR = []\n",
+    "proba_sm = []\n",
+    "proba = []\n",
+    "y_t = []\n",
+    "y = df['crisisST'].values\n",
+    "X = df.drop(['crisisST'], axis=1).values\n",
+    "scaler = StandardScaler()\n",
+    "X  = scaler.fit_transform(X)\n",
+    "sm = SMOTE(0.5,random_state=42)\n",
+    "tscv = TimeSeriesSplit(n_splits=n)\n",
+    "for train_index, test_index in tscv.split(X):\n",
+    "    X_train, X_test = X[train_index], X[test_index]\n",
+    "    y_train, y_test = y[train_index], y[test_index]\n",
+    "    y_t.append(y_test)\n",
+    "    X_train_sm, y_train_sm = sm.fit_resample(X_train, y_train)\n",
+    "    clf.fit(X_train_sm, y_train_sm)\n",
+    "    y_proba1 = clf.predict_proba(X_test)\n",
+    "    clf.fit(X_train, y_train)\n",
+    "    y_proba = clf.predict_proba(X_test)\n",
+    "    AUC_LR.append(roc_auc_score(y_test, y_proba[:,1]))\n",
+    "    proba.append(list(y_proba[:,1]))\n",
+    "    AUC_LR_sm.append(roc_auc_score(y_test, y_proba1[:,1]))\n",
+    "    proba_sm.append(list(y_proba1[:,1]))"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 44,
+   "metadata": {},
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "--------------------------------------------------------------------------------\n",
+      "AUC Score: 0.5243599304001989\n",
+      "Confusion_Matrix 1\n",
+      "[[447   0]\n",
+      " [ 18   0]]\n",
+      "--------------------------------------------------------------------------------\n",
+      "AUC Score: 0.6252821670428893\n",
+      "Confusion_Matrix 2\n",
+      "[[443   0]\n",
+      " [ 22   0]]\n",
+      "--------------------------------------------------------------------------------\n",
+      "AUC Score: 0.5746896275530637\n",
+      "Confusion_Matrix 3\n",
+      "[[454   0]\n",
+      " [ 11   0]]\n",
+      "--------------------------------------------------------------------------------\n",
+      "AUC Score: 0.5213770817797663\n",
+      "Confusion_Matrix 1\n",
+      "[[341 106]\n",
+      " [ 11   7]]\n",
+      "--------------------------------------------------------------------------------\n",
+      "AUC Score: 0.6311307202955058\n",
+      "Confusion_Matrix 2\n",
+      "[[407  36]\n",
+      " [ 18   4]]\n",
+      "--------------------------------------------------------------------------------\n",
+      "AUC Score: 0.592110532639167\n",
+      "Confusion_Matrix 3\n",
+      "[[454   0]\n",
+      " [ 11   0]]\n"
+     ]
+    },
+    {
+     "data": {
+      "text/plain": [
+       "(None, None)"
+      ]
+     },
+     "execution_count": 44,
+     "metadata": {},
+     "output_type": "execute_result"
+    }
+   ],
+   "source": [
+    "def conf_mat(prob, AUC):\n",
+    "    for i in range(n):\n",
+    "        y_pred = []\n",
+    "        for j in range(len(prob[i])):\n",
+    "            if prob[i][j]>0.5:\n",
+    "                y_pred.append(1)\n",
+    "            else: \n",
+    "                y_pred.append(0)\n",
+    "        print( \"-\"*80)\n",
+    "        print('AUC Score:', AUC[i])\n",
+    "        print('Confusion_Matrix', i+1)\n",
+    "        print(confusion_matrix(y_t[i],y_pred))\n",
+    "conf_mat(proba, AUC_LR), conf_mat(proba_sm, AUC_LR_sm)"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "### Quadratic Discriminant Analysis"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 45,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "clf = QuadraticDiscriminantAnalysis()"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 46,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "AUC_LR_sm = []\n",
+    "AUC_LR = []\n",
+    "proba_sm = []\n",
+    "proba = []\n",
+    "y_t = []\n",
+    "y = df['crisisST'].values\n",
+    "X = df.drop(['crisisST'], axis=1).values\n",
+    "scaler = StandardScaler()\n",
+    "X  = scaler.fit_transform(X)\n",
+    "sm = SMOTE(0.5,random_state=42)\n",
+    "tscv = TimeSeriesSplit(n_splits=n)\n",
+    "for train_index, test_index in tscv.split(X):\n",
+    "    X_train, X_test = X[train_index], X[test_index]\n",
+    "    y_train, y_test = y[train_index], y[test_index]\n",
+    "    y_t.append(y_test)\n",
+    "    X_train_sm, y_train_sm = sm.fit_resample(X_train, y_train)\n",
+    "    clf.fit(X_train_sm, y_train_sm)\n",
+    "    y_proba1 = clf.predict_proba(X_test)\n",
+    "    clf.fit(X_train, y_train)\n",
+    "    y_proba = clf.predict_proba(X_test)\n",
+    "    AUC_LR.append(roc_auc_score(y_test, y_proba[:,1]))\n",
+    "    proba.append(list(y_proba[:,1]))\n",
+    "    AUC_LR_sm.append(roc_auc_score(y_test, y_proba1[:,1]))\n",
+    "    proba_sm.append(list(y_proba1[:,1]))"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 47,
+   "metadata": {},
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "--------------------------------------------------------------------------------\n",
+      "AUC Score: 0.5321899080288341\n",
+      "Confusion_Matrix 1\n",
+      "[[246 201]\n",
+      " [  8  10]]\n",
+      "--------------------------------------------------------------------------------\n",
+      "AUC Score: 0.5983993433203365\n",
+      "Confusion_Matrix 2\n",
+      "[[156 287]\n",
+      " [  4  18]]\n",
+      "--------------------------------------------------------------------------------\n",
+      "AUC Score: 0.566079295154185\n",
+      "Confusion_Matrix 3\n",
+      "[[ 21 433]\n",
+      " [  0  11]]\n",
+      "--------------------------------------------------------------------------------\n",
+      "AUC Score: 0.5031071339796171\n",
+      "Confusion_Matrix 1\n",
+      "[[247 200]\n",
+      " [  9   9]]\n",
+      "--------------------------------------------------------------------------------\n",
+      "AUC Score: 0.6073260824953827\n",
+      "Confusion_Matrix 2\n",
+      "[[105 338]\n",
+      " [  2  20]]\n",
+      "--------------------------------------------------------------------------------\n",
+      "AUC Score: 0.5574689627553064\n",
+      "Confusion_Matrix 3\n",
+      "[[ 22 432]\n",
+      " [  0  11]]\n"
+     ]
+    },
+    {
+     "data": {
+      "text/plain": [
+       "(None, None)"
+      ]
+     },
+     "execution_count": 47,
+     "metadata": {},
+     "output_type": "execute_result"
+    }
+   ],
+   "source": [
+    "def conf_mat(prob, AUC):\n",
+    "    for i in range(n):\n",
+    "        y_pred = []\n",
+    "        for j in range(len(prob[i])):\n",
+    "            if prob[i][j]>0.5:\n",
+    "                y_pred.append(1)\n",
+    "            else: \n",
+    "                y_pred.append(0)\n",
+    "        print( \"-\"*80)\n",
+    "        print('AUC Score:', AUC[i])\n",
+    "        print('Confusion_Matrix', i+1)\n",
+    "        print(confusion_matrix(y_t[i],y_pred))\n",
+    "conf_mat(proba, AUC_LR), conf_mat(proba_sm, AUC_LR_sm)"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "### SVM Classifier"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 48,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "clf = svm.SVC(decision_function_shape='ovo', probability=True)"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 49,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "AUC_LR_sm = []\n",
+    "AUC_LR = []\n",
+    "proba_sm = []\n",
+    "proba = []\n",
+    "y_t = []\n",
+    "y = df['crisisST'].values\n",
+    "X = df.drop(['crisisST'], axis=1).values\n",
+    "scaler = StandardScaler()\n",
+    "X  = scaler.fit_transform(X)\n",
+    "sm = SMOTE(0.5,random_state=42)\n",
+    "tscv = TimeSeriesSplit(n_splits=n)\n",
+    "for train_index, test_index in tscv.split(X):\n",
+    "    X_train, X_test = X[train_index], X[test_index]\n",
+    "    y_train, y_test = y[train_index], y[test_index]\n",
+    "    y_t.append(y_test)\n",
+    "    X_train_sm, y_train_sm = sm.fit_resample(X_train, y_train)\n",
+    "    clf.fit(X_train_sm, y_train_sm)\n",
+    "    y_proba1 = clf.predict_proba(X_test)\n",
+    "    clf.fit(X_train, y_train)\n",
+    "    y_proba = clf.predict_proba(X_test)\n",
+    "    AUC_LR.append(roc_auc_score(y_test, y_proba[:,1]))\n",
+    "    proba.append(list(y_proba[:,1]))\n",
+    "    AUC_LR_sm.append(roc_auc_score(y_test, y_proba1[:,1]))\n",
+    "    proba_sm.append(list(y_proba1[:,1]))"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 50,
+   "metadata": {},
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "--------------------------------------------------------------------------------\n",
+      "AUC Score: 0.46358438975888644\n",
+      "Confusion_Matrix 1\n",
+      "[[447   0]\n",
+      " [ 18   0]]\n",
+      "--------------------------------------------------------------------------------\n",
+      "AUC Score: 0.7072645187769341\n",
+      "Confusion_Matrix 2\n",
+      "[[443   0]\n",
+      " [ 22   0]]\n",
+      "--------------------------------------------------------------------------------\n",
+      "AUC Score: 0.6357629154985983\n",
+      "Confusion_Matrix 3\n",
+      "[[454   0]\n",
+      " [ 11   0]]\n",
+      "--------------------------------------------------------------------------------\n",
+      "AUC Score: 0.5166542381307482\n",
+      "Confusion_Matrix 1\n",
+      "[[377  70]\n",
+      " [ 16   2]]\n",
+      "--------------------------------------------------------------------------------\n",
+      "AUC Score: 0.7390211368766674\n",
+      "Confusion_Matrix 2\n",
+      "[[387  56]\n",
+      " [ 12  10]]\n",
+      "--------------------------------------------------------------------------------\n",
+      "AUC Score: 0.7747296756107329\n",
+      "Confusion_Matrix 3\n",
+      "[[430  24]\n",
+      " [  7   4]]\n"
+     ]
+    },
+    {
+     "data": {
+      "text/plain": [
+       "(None, None)"
+      ]
+     },
+     "execution_count": 50,
+     "metadata": {},
+     "output_type": "execute_result"
+    }
+   ],
+   "source": [
+    "def conf_mat(prob, AUC):\n",
+    "    for i in range(n):\n",
+    "        y_pred = []\n",
+    "        for j in range(len(prob[i])):\n",
+    "            if prob[i][j]>0.5:\n",
+    "                y_pred.append(1)\n",
+    "            else: \n",
+    "                y_pred.append(0)\n",
+    "        print( \"-\"*80)\n",
+    "        print('AUC Score:', AUC[i])\n",
+    "        print('Confusion_Matrix', i+1)\n",
+    "        print(confusion_matrix(y_t[i],y_pred))\n",
+    "conf_mat(proba, AUC_LR), conf_mat(proba_sm, AUC_LR_sm)"
+   ]
+  },
+  {
+   "cell_type": "markdown",
+   "metadata": {},
+   "source": [
+    "### SGD Classifier"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 51,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "clf = SGDClassifier(loss = 'log')"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 52,
+   "metadata": {},
+   "outputs": [],
+   "source": [
+    "AUC_LR_sm = []\n",
+    "AUC_LR = []\n",
+    "proba_sm = []\n",
+    "proba = []\n",
+    "y_t = []\n",
+    "y = df['crisisST'].values\n",
+    "X = df.drop(['crisisST'], axis=1).values\n",
+    "scaler = StandardScaler()\n",
+    "X  = scaler.fit_transform(X)\n",
+    "sm = SMOTE(0.5,random_state=42)\n",
+    "tscv = TimeSeriesSplit(n_splits=n)\n",
+    "for train_index, test_index in tscv.split(X):\n",
+    "    X_train, X_test = X[train_index], X[test_index]\n",
+    "    y_train, y_test = y[train_index], y[test_index]\n",
+    "    y_t.append(y_test)\n",
+    "    X_train_sm, y_train_sm = sm.fit_resample(X_train, y_train)\n",
+    "    clf.fit(X_train_sm, y_train_sm)\n",
+    "    y_proba1 = clf.predict_proba(X_test)\n",
+    "    clf.fit(X_train, y_train)\n",
+    "    y_proba = clf.predict_proba(X_test)\n",
+    "    AUC_LR.append(roc_auc_score(y_test, y_proba[:,1]))\n",
+    "    proba.append(list(y_proba[:,1]))\n",
+    "    AUC_LR_sm.append(roc_auc_score(y_test, y_proba1[:,1]))\n",
+    "    proba_sm.append(list(y_proba1[:,1]))"
+   ]
+  },
+  {
+   "cell_type": "code",
+   "execution_count": 53,
+   "metadata": {},
+   "outputs": [
+    {
+     "name": "stdout",
+     "output_type": "stream",
+     "text": [
+      "--------------------------------------------------------------------------------\n",
+      "AUC Score: 0.5584141188168035\n",
+      "Confusion_Matrix 1\n",
+      "[[417  30]\n",
+      " [ 17   1]]\n",
+      "--------------------------------------------------------------------------------\n",
+      "AUC Score: 0.6227170121075313\n",
+      "Confusion_Matrix 2\n",
+      "[[443   0]\n",
+      " [ 22   0]]\n",
+      "--------------------------------------------------------------------------------\n",
+      "AUC Score: 0.6105326391670004\n",
+      "Confusion_Matrix 3\n",
+      "[[422  32]\n",
+      " [  9   2]]\n",
+      "--------------------------------------------------------------------------------\n",
+      "AUC Score: 0.5584141188168033\n",
+      "Confusion_Matrix 1\n",
+      "[[348  99]\n",
+      " [ 11   7]]\n",
+      "--------------------------------------------------------------------------------\n",
+      "AUC Score: 0.5697722142417402\n",
+      "Confusion_Matrix 2\n",
+      "[[200 243]\n",
+      " [  8  14]]\n",
+      "--------------------------------------------------------------------------------\n",
+      "AUC Score: 0.5504605526631958\n",
+      "Confusion_Matrix 3\n",
+      "[[290 164]\n",
+      " [  7   4]]\n"
+     ]
+    },
+    {
+     "data": {
+      "text/plain": [
+       "(None, None)"
+      ]
+     },
+     "execution_count": 53,
+     "metadata": {},
+     "output_type": "execute_result"
+    }
+   ],
+   "source": [
+    "def conf_mat(prob, AUC):\n",
+    "    for i in range(n):\n",
+    "        y_pred = []\n",
+    "        for j in range(len(prob[i])):\n",
+    "            if prob[i][j]>0.5:\n",
+    "                y_pred.append(1)\n",
+    "            else: \n",
+    "                y_pred.append(0)\n",
+    "        print( \"-\"*80)\n",
+    "        print('AUC Score:', AUC[i])\n",
+    "        print('Confusion_Matrix', i+1)\n",
+    "        print(confusion_matrix(y_t[i],y_pred))\n",
+    "conf_mat(proba, AUC_LR), conf_mat(proba_sm, AUC_LR_sm)"
+   ]
+  }
+ ],
+ "metadata": {
+  "kernelspec": {
+   "display_name": "Python 3",
+   "language": "python",
+   "name": "python3"
+  },
+  "language_info": {
+   "codemirror_mode": {
+    "name": "ipython",
+    "version": 3
+   },
+   "file_extension": ".py",
+   "mimetype": "text/x-python",
+   "name": "python",
+   "nbconvert_exporter": "python",
+   "pygments_lexer": "ipython3",
+   "version": "3.6.5"
+  }
+ },
+ "nbformat": 4,
+ "nbformat_minor": 2
+}
