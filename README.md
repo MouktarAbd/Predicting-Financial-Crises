@@ -1,4 +1,4 @@
-# Predicting-Financial-Crises
+# Predicting Financial Crises
 
 The pdf file will report all the results of this study. The dataset comes from the Schularick and Taylor and is covering 14 developed countries such as the United States or France and goes from 1870 to 2008. 
 
